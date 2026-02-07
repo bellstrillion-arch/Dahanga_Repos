@@ -1,60 +1,57 @@
 import ee
 import os
 import json
+import base64
 from datetime import datetime, timedelta
 
 def run_dahanga_monitoring():
-    # 1. Authenticate using the secret passed from YAML
-    try:
-        # This matches the env variable in your YAML
-        json_text = os.environ.get('GEE_JSON_KEY')
-        gee_json_key = json.loads(json_text)
-        
-        credentials = ee.ServiceAccountCredentials(
-            gee_json_key['client_email'], 
-            key_data=json_text
-        )
-        # Using your new project ID 'dahanga'
-        ee.Initialize(credentials, project='dahanga')
-        print("Connected to GEE Project: Dahanga")
-    except Exception as e:
-        print(f"Connection Failed: {e}")
+    # 1. Fetch the secret from the environment
+    encoded_key = os.environ.get('GEE_JSON_KEY')
+    
+    if not encoded_key:
+        print("❌ ERROR: Secret not found! Check if 'DAHA_REPO_SEC' is set in GitHub.")
         return
 
-    # 2. Set the Region (Gahanga Sector)
-    asset_path = "projects/dahanga/assets/Gahanga_Sector"
-    gahanga_aoi = ee.FeatureCollection(asset_path)
-    region = gahanga_aoi.geometry().bounds()
-
-    # 3. Check for the Latest Image
-    # Search the last 10 days for a fresh Sentinel-2 photo
-    now = datetime.now()
-    s2_col = ee.ImageCollection("COPERNICUS/S2_HARMONIZED") \
-               .filterBounds(region) \
-               .filterDate((now - timedelta(days=10)).strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')) \
-               .sort('system:time_start', False)
-    
-    latest_img = s2_col.first()
-
-    if latest_img.getInfo():
-        img_id = latest_img.id().getInfo()
-        print(f"Latest Image Found: {img_id}")
-
-        # 4. Export Task (Visual Check for Work #1)
-        task_name = f"Gahanga_Check_{now.strftime('%H%M')}"
+    try:
+        # 2. Decode the Base64 Key
+        decoded_bytes = base64.b64decode(encoded_key)
+        gee_json_key = json.loads(decoded_bytes.decode('utf-8'))
         
-        task = ee.batch.Export.image.toAsset(
-            image=latest_img.select(['B4', 'B3', 'B2']).divide(10000),
-            description=task_name,
-            assetId=f"projects/dahanga/assets/{task_name}",
-            scale=10, 
-            region=region,
-            maxPixels=1e8
+        # 3. Authenticate to the 'dahanga' project
+        credentials = ee.ServiceAccountCredentials(
+            gee_json_key['client_email'], 
+            key_data=json.dumps(gee_json_key)
         )
-        task.start()
-        print(f"Success! Task '{task_name}' is now running in your GEE Task tab.")
-    else:
-        print("No recent images found for Gahanga. Robot is going back to sleep.")
+        ee.Initialize(credentials, project='dahanga')
+        print("✅ SUCCESS: Connected to Project Dahanga.")
+        
+    except Exception as e:
+        print(f"❌ AUTH ERROR: {e}")
+        return
+
+    # 4. Define Region (Gahanga Sector)
+    # Ensure this asset 'Gahanga_Sector' has finished its upload (turned Green)
+    try:
+        gahanga_aoi = ee.FeatureCollection("projects/dahanga/assets/Gahanga_Sector")
+        
+        # Simple verification task
+        img = ee.ImageCollection("COPERNICUS/S2_HARMONIZED") \
+                .filterBounds(gahanga_aoi) \
+                .sort('system:time_start', False).first()
+
+        if img.getInfo():
+            task_id = f"Gahanga_Verif_{datetime.now().strftime('%H%M')}"
+            task = ee.batch.Export.image.toAsset(
+                image=img.select(['B4', 'B3', 'B2']).divide(10000),
+                description=task_id,
+                assetId=f"projects/dahanga/assets/{task_id}",
+                scale=10,
+                region=gahanga_aoi.geometry().bounds()
+            )
+            task.start()
+            print(f"🚀 Task started: {task_id}. Check GEE Tasks tab!")
+    except Exception as e:
+        print(f"❌ ASSET ERROR: Could not find Gahanga_Sector. Is it still uploading? {e}")
 
 if __name__ == "__main__":
     run_dahanga_monitoring()
