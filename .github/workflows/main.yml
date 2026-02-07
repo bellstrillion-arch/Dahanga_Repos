@@ -1,15 +1,13 @@
-name: Dahanga Work 1 Automation
+name: Dahanga Work 1
 
 on:
-  schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight
-  workflow_dispatch: # This adds the "Run workflow" button in GitHub Actions
+  workflow_dispatch: # Allows you to manually click "Run" in GitHub
 
 jobs:
-  run-gee-sync:
+  dahanga-job:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -17,11 +15,11 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pip install earthengine-api
 
-      - name: Run Monitoring Script
+      - name: Run Script
         env:
-          # MATCHING YOUR SECRET NAME HERE:
-          GEE_JSON_KEY: ${{ secrets.Dahanga_Serv_Acc }}
+          # Mapping your specific secret name to the script's variable
+          GEE_JSON_KEY: ${{ secrets.DAHA_REPO_SEC }}
         run: python dahanga_sync.py
